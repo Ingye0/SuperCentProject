@@ -51,13 +51,11 @@ public class ChickenAI : MonoBehaviour
     {
         while (true)
         {
-            // Idle
             SetWalk(false);
 
             float idleTime = Random.Range(idleMin, idleMax);
             yield return new WaitForSeconds(idleTime);
 
-            // 랜덤 회전
             float y = Random.Range(0f, 360f);
             Quaternion targetRot = Quaternion.Euler(0f, y, 0f);
 
@@ -72,7 +70,6 @@ public class ChickenAI : MonoBehaviour
                 yield return null;
             }
 
-            // 이동
             SetWalk(true);
 
             float moveTime = Random.Range(moveMin, moveMax);
@@ -98,15 +95,15 @@ public class ChickenAI : MonoBehaviour
     }
 
     // 플레이어 공격 맞았을 때
-    public void Hit(int damage)
+    public void Hit(int damage, PlayerInventory attacker)
     {
         hp -= damage;
 
         if (hp <= 0)
-            Die();
+            Die(attacker);
     }
 
-    private void Die()
+    private void Die(PlayerInventory attacker)
     {
         if (co != null)
         {
@@ -115,6 +112,9 @@ public class ChickenAI : MonoBehaviour
         }
 
         SetWalk(false);
+
+        if (attacker != null)
+            attacker.Add(ResourceType.RawChicken, 1);
 
         if (mgr != null)
             mgr.Despawn(this);

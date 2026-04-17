@@ -14,10 +14,18 @@ public class PlayerAutoAttack : MonoBehaviour
     [SerializeField] private bool lookTarget = true;
     [SerializeField] private float turnSpeed = 720f;
 
+    [Header("ÂüÁ¶")]
+    [SerializeField] private PlayerInventory inventory;
+
     private List<ChickenAI> chickens = new List<ChickenAI>();
     private Coroutine attackCo;
-
     private ChickenAI nowTarget;
+
+    private void Awake()
+    {
+        if (inventory == null)
+            inventory = GetComponent<PlayerInventory>();
+    }
 
     private void OnEnable()
     {
@@ -83,7 +91,7 @@ public class PlayerAutoAttack : MonoBehaviour
 
             if (nowTarget != null && nowTarget.gameObject.activeInHierarchy)
             {
-                nowTarget.Hit(damage);
+                nowTarget.Hit(damage, inventory);
                 Clean();
 
                 yield return new WaitForSeconds(attackDelay);
