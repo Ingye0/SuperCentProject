@@ -3,7 +3,7 @@ using UnityEngine;
 
 // 닭 이동 AI
 // Idle -> 랜덤 방향 회전 -> 앞으로 이동 반복
-// 애니메이션은 Idle / Walk 두 가지만 사용
+// 체력 2, 두 번 맞으면 죽음
 public class ChickenAI : MonoBehaviour
 {
     [Header("이동")]
@@ -19,10 +19,13 @@ public class ChickenAI : MonoBehaviour
     [Header("애니메이션")]
     [SerializeField] private Animator animator;
 
+    [Header("체력")]
+    [SerializeField] private int maxHp = 2;
+
     private ChickenManager mgr;
     private Coroutine co;
+    private int hp;
 
-    // Animator bool 이름
     private readonly int isWalkHash = Animator.StringToHash("IsWalk");
 
     public void SetMgr(ChickenManager m)
@@ -30,7 +33,7 @@ public class ChickenAI : MonoBehaviour
         mgr = m;
     }
 
-    // 스폰될 때마다 행동 다시 시작
+    // 스폰될 때마다 초기화
     public void InitMove()
     {
         if (animator == null)
@@ -39,6 +42,7 @@ public class ChickenAI : MonoBehaviour
         if (co != null)
             StopCoroutine(co);
 
+        hp = maxHp;
         SetWalk(false);
         co = StartCoroutine(CoMove());
     }
@@ -47,13 +51,13 @@ public class ChickenAI : MonoBehaviour
     {
         while (true)
         {
-            // 1. Idle
+            // Idle
             SetWalk(false);
 
             float idleTime = Random.Range(idleMin, idleMax);
             yield return new WaitForSeconds(idleTime);
 
-            // 2. 랜덤 방향으로 회전
+            // 랜덤 회전
             float y = Random.Range(0f, 360f);
             Quaternion targetRot = Quaternion.Euler(0f, y, 0f);
 
@@ -68,7 +72,7 @@ public class ChickenAI : MonoBehaviour
                 yield return null;
             }
 
-            // 3. 앞으로 이동
+            // 이동
             SetWalk(true);
 
             float moveTime = Random.Range(moveMin, moveMax);
@@ -81,12 +85,10 @@ public class ChickenAI : MonoBehaviour
                 yield return null;
             }
 
-            // 이동 끝나면 다시 Idle로 돌아가게 false
             SetWalk(false);
         }
     }
 
-    // 걷기 애니메이션 on/off
     private void SetWalk(bool value)
     {
         if (animator == null)
@@ -95,11 +97,22 @@ public class ChickenAI : MonoBehaviour
         animator.SetBool(isWalkHash, value);
     }
 
-    // 잡혔을 때 호출
-    public void Catch()
+    // 플레이어 공격 맞았을 때
+    public void Hit(int damage)
+    {
+        hp -= damage;
+
+        if (hp <= 0)
+            Die();
+    }
+
+    private void Die()
     {
         if (co != null)
+        {
             StopCoroutine(co);
+            co = null;
+        }
 
         SetWalk(false);
 
