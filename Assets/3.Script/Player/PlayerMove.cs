@@ -12,14 +12,21 @@ public class PlayerMove : MonoBehaviour
     [SerializeField] private CharacterController controller;
     [SerializeField] private FloatingJoystick joystick;
     [SerializeField] private Transform cameraTransform;
+    [SerializeField] private Animator animator;
 
     private Vector3 velocity; // y축 중력용
+
+    private readonly int isWalkHash = Animator.StringToHash("IsWalk");
 
     private void Awake()
     {
         // CharacterController가 비어있으면 자동으로 가져옴
         if (controller == null)
             controller = GetComponent<CharacterController>();
+
+        // Animator가 비어있으면 자식에서 자동으로 찾음
+        if (animator == null)
+            animator = GetComponentInChildren<Animator>();
     }
 
     private void Update()
@@ -54,11 +61,17 @@ public class PlayerMove : MonoBehaviour
         if (moveDir.magnitude > 1f)
             moveDir = moveDir.normalized;
 
+        // 걷기 애니메이션 처리
+        bool isWalk = moveDir.sqrMagnitude > 0.001f;
+
+        if (animator != null)
+            animator.SetBool(isWalkHash, isWalk);
+
         // 이동
         controller.Move(moveDir * moveSpeed * Time.deltaTime);
 
         // 움직이고 있으면 이동 방향으로 회전
-        if (moveDir.sqrMagnitude > 0.001f)
+        if (isWalk)
         {
             Quaternion targetRotation = Quaternion.LookRotation(moveDir);
             transform.rotation = Quaternion.Slerp(
