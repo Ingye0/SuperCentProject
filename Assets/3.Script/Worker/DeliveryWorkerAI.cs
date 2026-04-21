@@ -4,10 +4,10 @@ using UnityEngine;
 // 자동 배달 알바
 // - 프라이어에서 튀긴닭을 최대 3개까지 가져감
 // - 0.2초마다 1개씩 가져오고 1개씩 내려놓음
-// - 프라이어에 있는 수가 2개 이하이면 있는 만큼만 가져감
 // - 판매대에 가져다 놓은 뒤 다시 프라이어로 돌아감
 // - PlayerInventory 없이 carryCount만으로 처리
 // - 등 뒤에는 BackStackView로 튀긴닭 수량을 표시
+// - 가져갈 때 / 내려놓을 때 알바 액션 소리 재생
 public class DeliveryWorkerAI : MonoBehaviour
 {
     private enum State
@@ -30,17 +30,17 @@ public class DeliveryWorkerAI : MonoBehaviour
     [SerializeField] private float putDelay = 0.2f;  // 내려놓는 간격
 
     [Header("참조")]
-    [SerializeField] private Fryer fryer;                   // 프라이어 참조
-    [SerializeField] private SalesCounter salesCounter;     // 판매대 참조
-    [SerializeField] private Transform fryerPoint;          // 프라이어 이동 포인트
-    [SerializeField] private Transform salesCounterPoint;   // 판매대 이동 포인트
-    [SerializeField] private Animator animator;             // 걷기 애니메이터
-    [SerializeField] private CharacterController controller; // 이동용 컨트롤러
-    [SerializeField] private BackStackView stackView;       // 등 뒤 스택 표시
+    [SerializeField] private Fryer fryer;                      // 프라이어 참조
+    [SerializeField] private SalesCounter salesCounter;        // 판매대 참조
+    [SerializeField] private Transform fryerPoint;             // 프라이어 이동 포인트
+    [SerializeField] private Transform salesCounterPoint;      // 판매대 이동 포인트
+    [SerializeField] private Animator animator;                // 걷기 애니메이터
+    [SerializeField] private CharacterController controller;   // 이동용 컨트롤러
+    [SerializeField] private BackStackView stackView;          // 등 뒤 스택 표시
 
     [Header("현재 상태")]
-    [SerializeField] private State state = State.WaitAtFryer; // 현재 행동 상태
-    [SerializeField] private int carryCount;                  // 현재 들고 있는 튀긴닭 개수
+    [SerializeField] private State state = State.WaitAtFryer;  // 현재 행동 상태
+    [SerializeField] private int carryCount;                   // 현재 들고 있는 튀긴닭 개수
 
     private Coroutine loopCo;
 
@@ -91,13 +91,11 @@ public class DeliveryWorkerAI : MonoBehaviour
     }
 
     // 메인 루프
-    // 손에 닭이 없으면 프라이어로 가고
-    // 들고 있으면 판매대로 이동해서 내려놓음
     private IEnumerator CoLoop()
     {
         while (true)
         {
-            // 손에 닭이 하나도 없으면 프라이어 쪽 행동
+            // 손에 닭이 없으면 프라이어로 감
             if (carryCount <= 0)
             {
                 state = State.MoveToFryer;
@@ -144,7 +142,6 @@ public class DeliveryWorkerAI : MonoBehaviour
 
             float dist = Vector3.Distance(flatCurrent, flatTarget);
 
-            // 충분히 가까워지면 도착
             if (dist <= arriveDistance)
             {
                 SetWalk(false);
@@ -157,9 +154,6 @@ public class DeliveryWorkerAI : MonoBehaviour
     }
 
     // 프라이어에서 튀긴닭 수령
-    // - 최대 3개
-    // - 0.2초마다 1개씩
-    // - 2개 이하이면 있는 만큼만 가져감
     private IEnumerator CoTakeFromFryer()
     {
         if (fryer == null)
@@ -167,7 +161,7 @@ public class DeliveryWorkerAI : MonoBehaviour
 
         while (carryCount < maxCarry)
         {
-            // 더 가져갈 튀긴닭이 없으면 종료
+            // 더 가져갈 닭이 없으면 종료
             if (!fryer.CanTake())
                 yield break;
 
@@ -181,12 +175,15 @@ public class DeliveryWorkerAI : MonoBehaviour
             carryCount += got;
             RefreshView();
 
+            // 알바가 가져갈 때 소리
+            if (AudioManager.I != null)
+                AudioManager.I.PlayPop();
+
             yield return new WaitForSeconds(takeDelay);
         }
     }
 
     // 판매대에 튀긴닭 내려놓기
-    // - 0.2초마다 1개씩
     private IEnumerator CoPutToCounter()
     {
         if (salesCounter == null)
@@ -214,24 +211,26 @@ public class DeliveryWorkerAI : MonoBehaviour
             carryCount -= put;
             RefreshView();
 
+            // 알바가 내려놓을 때 소리
+            if (AudioManager.I != null)
+                AudioManager.I.PlayPop();
+
             yield return new WaitForSeconds(putDelay);
         }
     }
 
-    // 목표 위치로 부드럽게 이동
+    // 목표 위치로 이동
     private void MoveTo(Vector3 targetPos)
     {
         Vector3 dir = targetPos - transform.position;
         dir.y = 0f;
 
-        // 방향이 너무 짧으면 정지
         if (dir.sqrMagnitude <= 0.0001f)
         {
             SetWalk(false);
             return;
         }
 
-        // 목표 방향으로 회전
         Quaternion targetRot = Quaternion.LookRotation(dir.normalized);
         transform.rotation = Quaternion.RotateTowards(
             transform.rotation,
@@ -239,7 +238,6 @@ public class DeliveryWorkerAI : MonoBehaviour
             rotateSpeed * Time.deltaTime
         );
 
-        // 앞으로 이동
         Vector3 move = transform.forward * moveSpeed * Time.deltaTime;
 
         if (controller != null)
@@ -251,7 +249,6 @@ public class DeliveryWorkerAI : MonoBehaviour
     }
 
     // 등 뒤 스택 표시 갱신
-    // 생닭은 0, 튀긴닭만 carryCount만큼 표시
     private void RefreshView()
     {
         if (stackView != null)

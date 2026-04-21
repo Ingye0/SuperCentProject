@@ -1,43 +1,39 @@
 using System.Collections;
-using System.Collections.Generic;
 using UnityEngine;
 
 // 자동 사냥 알바
 // - 가장 가까운 닭을 찾아 이동
 // - 공격 범위 안에 들어오면 공격
-// - 닭 체력 3 기준으로 3번 맞으면 처치
-// - 처치한 생닭은 프라이어로 바로 전달
-// - 이동/회전을 부드럽게 해서 텔레포트처럼 보이지 않게 처리
+// - 실제 타격 시점마다 ChickenAI.Hit()를 호출해서
+//   닭의 실제 HP를 깎고 체력바도 같이 갱신되게 함
+// - 닭이 죽으면 생닭 1개를 프라이어에 바로 넣어줌
+// - 공격할 때 무기 휘두르는 소리 재생
+// - 프라이어에 생닭을 넣을 때 알바 액션 소리 재생
 public class WorkerHunterAI : MonoBehaviour
 {
     [Header("이동")]
-    [SerializeField] private float moveSpeed = 2.5f;   // 알바 이동 속도
-    [SerializeField] private float rotateSpeed = 360f; // 회전 속도
+    [SerializeField] private float moveSpeed = 2.5f;      // 이동 속도
+    [SerializeField] private float rotateSpeed = 360f;    // 회전 속도
     [SerializeField] private float arriveDistance = 0.1f; // 거의 도착했다고 보는 거리
 
     [Header("타겟 유지")]
-    [SerializeField] private float retargetDistance = 6f; // 타겟이 너무 멀어지면 새 타겟 탐색
+    [SerializeField] private float retargetDistance = 6f; // 현재 타겟이 너무 멀어지면 다시 가까운 닭 탐색
 
     [Header("공격")]
-    [SerializeField] private float attackRange = 1.5f; // 공격 가능한 거리
-    [SerializeField] private float attackDelay = 0.8f; // 한 번 공격 후 다음 공격까지 대기 시간
-    [SerializeField] private int damage = 1;           // 알바 공격력 1
+    [SerializeField] private float attackRange = 1.5f;    // 공격 가능한 거리
+    [SerializeField] private float attackDelay = 0.8f;    // 한 번 공격 후 다음 공격까지 대기 시간
+    [SerializeField] private int damage = 1;              // 알바 공격력
 
     [Header("참조")]
-    [SerializeField] private Fryer fryer;              // 잡은 생닭을 바로 넣어줄 프라이어
-    [SerializeField] private Animator animator;        // 알바 애니메이터
+    [SerializeField] private Fryer fryer;                    // 죽인 닭을 생닭 1개로 프라이어에 전달
+    [SerializeField] private Animator animator;              // 걷기/공격 애니메이션
     [SerializeField] private CharacterController controller; // 이동용 컨트롤러
 
-    private Coroutine loopCo;          // 메인 행동 코루틴
-    private bool isAttacking;          // 현재 공격 중인지
-    private ChickenAI targetChicken;   // 현재 추적 중인 닭
-    private ChickenAI attackTarget;    // 이번 공격에서 실제로 때릴 닭
+    private Coroutine loopCo;        // 메인 행동 루프 코루틴
+    private bool isAttacking;        // 현재 공격 중인지
+    private ChickenAI targetChicken; // 현재 추적 중인 닭
+    private ChickenAI attackTarget;  // 이번 공격에서 실제로 때릴 닭
 
-    // 닭별 누적 데미지 저장
-    // 닭 체력이 3이므로 3 누적되면 처치
-    private Dictionary<ChickenAI, int> damageMap = new Dictionary<ChickenAI, int>();
-
-    // Animator 파라미터 해시
     private readonly int isWalkHash = Animator.StringToHash("IsWalk");
     private readonly int attackHash = Animator.StringToHash("Attack");
 
@@ -54,11 +50,11 @@ public class WorkerHunterAI : MonoBehaviour
 
     private void OnEnable()
     {
-        // 혹시 기존 루프가 돌고 있으면 중복 실행 방지
+        // 중복 실행 방지
         if (loopCo != null)
             StopCoroutine(loopCo);
 
-        // 알바 행동 시작
+        // 행동 루프 시작
         loopCo = StartCoroutine(CoLoop());
     }
 
@@ -76,37 +72,33 @@ public class WorkerHunterAI : MonoBehaviour
         targetChicken = null;
         attackTarget = null;
 
-        // 걷기 애니메이션 종료
+        // 걷기 애니메이션 끄기
         SetWalk(false);
     }
 
-    // 생성 직후 외부에서 프라이어를 연결해주기 위한 함수
+    // 외부에서 프라이어 연결
     public void SetFryer(Fryer newFryer)
     {
         fryer = newFryer;
     }
 
-    // 알바의 메인 행동 루프
-    // 1. 공격 중이면 대기
-    // 2. 타겟 닭 확인
-    // 3. 타겟까지 이동
-    // 4. 공격 범위 안이면 공격
+    // 알바 메인 루프
     private IEnumerator CoLoop()
     {
         while (true)
         {
-            // 공격 중에는 다른 행동을 하지 않음
+            // 공격 중에는 다른 행동 안 함
             if (isAttacking)
             {
                 yield return null;
                 continue;
             }
 
-            // 현재 타겟이 없거나 죽었으면 새로 찾기
+            // 타겟이 없거나 비활성이면 새로 찾기
             if (!IsTargetValid(targetChicken))
                 targetChicken = FindNearChicken();
 
-            // 현재 타겟이 너무 멀어졌으면 가까운 닭으로 다시 탐색
+            // 타겟이 너무 멀어졌으면 다시 가까운 닭 찾기
             if (IsTargetValid(targetChicken))
             {
                 float distFromTarget = GetFlatDistance(transform.position, targetChicken.transform.position);
@@ -115,7 +107,7 @@ public class WorkerHunterAI : MonoBehaviour
                     targetChicken = FindNearChicken();
             }
 
-            // 최종적으로도 타겟이 없으면 대기
+            // 그래도 타겟이 없으면 대기
             if (!IsTargetValid(targetChicken))
             {
                 SetWalk(false);
@@ -123,10 +115,10 @@ public class WorkerHunterAI : MonoBehaviour
                 continue;
             }
 
-            // 현재 타겟과의 거리 계산
+            // 현재 타겟과 거리 계산
             float dist = GetFlatDistance(transform.position, targetChicken.transform.position);
 
-            // 공격 범위 밖이면 타겟 쪽으로 계속 이동
+            // 공격 거리 밖이면 이동
             if (dist > attackRange)
             {
                 MoveTo(targetChicken.transform.position);
@@ -134,68 +126,70 @@ public class WorkerHunterAI : MonoBehaviour
                 continue;
             }
 
-            // 공격 범위 안에 들어오면 멈추고 공격
+            // 공격 거리 안이면 공격 시작
             SetWalk(false);
             yield return CoAttack(targetChicken);
         }
     }
 
-    // 공격 코루틴
-    // - 공격 시작 시 공격 대상을 고정
-    // - 공격 전에 타겟 방향으로 부드럽게 회전
-    // - 애니메이션 실행
-    // - 실제 데미지는 애니메이션 이벤트에서 적용
+    // 공격 처리
     private IEnumerator CoAttack(ChickenAI chicken)
     {
+        // 공격 대상이 유효하지 않으면 종료
         if (!IsTargetValid(chicken))
             yield break;
 
         // 공격 시작
         isAttacking = true;
+
+        // 이번 공격 타겟 고정
         attackTarget = chicken;
 
-        // 공격 전에 타겟 방향으로 살짝 부드럽게 회전
+        // 공격 전 타겟 방향 회전
         yield return RotateToward(chicken.transform.position);
 
         // 공격 애니메이션 실행
         if (animator != null)
             animator.SetTrigger(attackHash);
 
-        // 공격 딜레이만큼 대기 후 다음 공격 가능
+        // 다음 공격까지 대기
         yield return new WaitForSeconds(attackDelay);
 
+        // 공격 종료
         isAttacking = false;
     }
 
     // 애니메이션 이벤트에서 호출
-    // 실제 타격 타이밍에 호출해서 데미지를 넣음
     public void ApplyAttackDamage()
     {
-        // 공격 대상이 없거나 이미 죽었으면 종료
+        // 공격 대상이 없거나 이미 사라졌으면 종료
         if (!IsTargetValid(attackTarget))
             return;
 
-        int currentDamage = 0;
+        // 사냥 알바 공격 소리
+        if (AudioManager.I != null)
+            AudioManager.I.PlayWeaponSwing();
 
-        // 기존 누적 데미지가 있으면 가져오기
-        if (damageMap.ContainsKey(attackTarget))
-            currentDamage = damageMap[attackTarget];
+        // Hit 호출 후 바로 비활성화될 수 있으므로 지역변수로 저장
+        ChickenAI hitChicken = attackTarget;
 
-        // 이번 공격 데미지 추가
-        currentDamage += damage;
-        damageMap[attackTarget] = currentDamage;
+        // 실제 데미지 적용
+        hitChicken.Hit(damage, null);
 
-        // 닭 체력 3 기준으로 누적 3 이상이면 처치
-        if (currentDamage >= 3)
+        // 닭이 죽었으면 프라이어에 생닭 1개 전달
+        if (!hitChicken.gameObject.activeInHierarchy)
         {
-            damageMap.Remove(attackTarget);
-
-            // 프라이어가 있으면 생닭 1개 바로 전달
             if (fryer != null)
-                fryer.AddRawDirect(1);
+            {
+                bool added = fryer.AddRawDirect(1);
 
-            // 닭은 플레이어 인벤토리 보상 없이 제거
-            attackTarget.Hit(999, null);
+                // 실제로 프라이어에 들어갔을 때만 알바 액션 소리
+                if (added)
+                {
+                    if (AudioManager.I != null)
+                        AudioManager.I.PlayPop();
+                }
+            }
         }
     }
 
@@ -211,7 +205,6 @@ public class WorkerHunterAI : MonoBehaviour
         {
             ChickenAI chicken = all[i];
 
-            // 죽었거나 비활성 닭은 제외
             if (!IsTargetValid(chicken))
                 continue;
 
@@ -227,7 +220,7 @@ public class WorkerHunterAI : MonoBehaviour
         return near;
     }
 
-    // 목표 위치로 부드럽게 이동
+    // 목표 위치까지 이동
     private void MoveTo(Vector3 targetPos)
     {
         Vector3 dir = targetPos - transform.position;
@@ -240,7 +233,7 @@ public class WorkerHunterAI : MonoBehaviour
             return;
         }
 
-        // 목표 방향으로 천천히 회전
+        // 목표 방향 회전
         Quaternion targetRot = Quaternion.LookRotation(dir.normalized);
         transform.rotation = Quaternion.RotateTowards(
             transform.rotation,
@@ -248,9 +241,8 @@ public class WorkerHunterAI : MonoBehaviour
             rotateSpeed * Time.deltaTime
         );
 
-        // 현재 바라보는 방향으로 앞으로 이동
-        Vector3 moveDir = transform.forward;
-        Vector3 move = moveDir * moveSpeed * Time.deltaTime;
+        // 앞으로 이동
+        Vector3 move = transform.forward * moveSpeed * Time.deltaTime;
 
         if (controller != null)
             controller.Move(move);
@@ -260,8 +252,7 @@ public class WorkerHunterAI : MonoBehaviour
         SetWalk(true);
     }
 
-    // 공격 전에 타겟 방향으로 잠깐 부드럽게 회전
-    // 즉시 회전보다 덜 튀어 보이게 하기 위한 처리
+    // 공격 전에 타겟 방향을 바라보게 회전
     private IEnumerator RotateToward(Vector3 targetPos)
     {
         float timer = 0f;
@@ -287,9 +278,7 @@ public class WorkerHunterAI : MonoBehaviour
         }
     }
 
-    // 현재 타겟이 유효한지 검사
-    // - null이면 false
-    // - 비활성 상태면 false
+    // 타겟 유효성 검사
     private bool IsTargetValid(ChickenAI chicken)
     {
         if (chicken == null)
@@ -310,7 +299,7 @@ public class WorkerHunterAI : MonoBehaviour
         animator.SetBool(isWalkHash, value);
     }
 
-    // y축을 무시한 평면 거리 계산
+    // y축 무시 평면 거리 계산
     private float GetFlatDistance(Vector3 a, Vector3 b)
     {
         a.y = 0f;
