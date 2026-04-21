@@ -3,7 +3,7 @@ using UnityEngine;
 
 // 닭 이동 AI
 // Idle -> 랜덤 방향 회전 -> 앞으로 이동 반복
-// 체력 2, 두 번 맞으면 죽음
+// 체력 3, 맞으면 감소
 public class ChickenAI : MonoBehaviour
 {
     [Header("이동")]
@@ -20,7 +20,10 @@ public class ChickenAI : MonoBehaviour
     [SerializeField] private Animator animator;
 
     [Header("체력")]
-    [SerializeField] private int maxHp = 2;
+    [SerializeField] private int maxHp = 3;
+
+    [Header("UI")]
+    [SerializeField] private ChickenHpBar hpBar;
 
     private ChickenManager mgr;
     private Coroutine co;
@@ -39,10 +42,18 @@ public class ChickenAI : MonoBehaviour
         if (animator == null)
             animator = GetComponentInChildren<Animator>();
 
+        if (hpBar == null)
+            hpBar = GetComponentInChildren<ChickenHpBar>(true);
+
         if (co != null)
             StopCoroutine(co);
 
+        // 체력 초기화
         hp = maxHp;
+
+        // 체력바 갱신
+        RefreshHpBar();
+
         SetWalk(false);
         co = StartCoroutine(CoMove());
     }
@@ -99,8 +110,23 @@ public class ChickenAI : MonoBehaviour
     {
         hp -= damage;
 
+        // 체력 0 아래로 내려가지 않게 보정
+        if (hp < 0)
+            hp = 0;
+
+        // 체력바 갱신
+        RefreshHpBar();
+
         if (hp <= 0)
             Die(attacker);
+    }
+
+    private void RefreshHpBar()
+    {
+        if (hpBar == null)
+            return;
+
+        hpBar.SetHp(hp, maxHp);
     }
 
     private void Die(PlayerInventory attacker)

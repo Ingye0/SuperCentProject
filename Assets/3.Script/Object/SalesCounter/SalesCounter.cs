@@ -8,12 +8,12 @@ using UnityEngine;
 public class SalesCounter : MonoBehaviour
 {
     [Header("플레이어 트리거")]
-    [SerializeField] private PlayerTriggerRelay putTrigger;
-    [SerializeField] private PlayerTriggerRelay takeTrigger;
+    [SerializeField] private PlayerTriggerRelay putTrigger;   // 플레이어 튀긴닭 올리기 트리거
+    [SerializeField] private PlayerTriggerRelay takeTrigger;  // 플레이어 돈 수령 트리거
 
     [Header("보관 설정")]
-    [SerializeField] private int maxFried = 20;              // 판매대 최대 튀긴닭 수
-    [SerializeField] private int maxMoneyStack = 30;         // 판매대 최대 돈 프리팹 수
+    [SerializeField] private int maxFried = 20;        // 판매대 최대 튀긴닭 수
+    [SerializeField] private int maxMoneyStack = 30;   // 판매대 최대 돈 프리팹 수
 
     [Header("손님 판매 설정")]
     [SerializeField] private int needFriedForCustomer = 4;   // 손님 1명이 사갈 총 닭 개수
@@ -21,24 +21,24 @@ public class SalesCounter : MonoBehaviour
     [SerializeField] private float customerTakeDelay = 0.5f; // 손님이 닭 1개씩 가져가는 간격
 
     [Header("플레이어 처리 속도")]
-    [SerializeField] private float putDelay = 0.1f;          // 플레이어가 닭 올리는 속도
-    [SerializeField] private float takeDelay = 0.1f;         // 플레이어가 돈 가져가는 속도
+    [SerializeField] private float putDelay = 0.1f;   // 플레이어가 닭 올리는 속도
+    [SerializeField] private float takeDelay = 0.1f;  // 플레이어가 돈 가져가는 속도
 
     [Header("현재 상태")]
-    [SerializeField] private int friedStored;                // 판매대 위 튀긴닭 개수
-    [SerializeField] private int moneyStored;                // 판매대 위 돈 프리팹 개수
+    [SerializeField] private int friedStored; // 판매대 위 튀긴닭 개수
+    [SerializeField] private int moneyStored; // 판매대 위 돈 프리팹 개수
 
     [Header("현재 손님 진행도")]
-    [SerializeField] private int currentCustomerTaken;       // 현재 손님이 지금까지 가져간 닭 수
+    [SerializeField] private int currentCustomerTaken; // 현재 손님이 지금까지 가져간 닭 수
 
     [Header("표시")]
-    [SerializeField] private SalesCounterView stackView;
+    [SerializeField] private SalesCounterView stackView; // 판매대 표시 갱신용
 
     private Coroutine putCo;
     private Coroutine takeCo;
     private Coroutine customerCo;
 
-    private CustomerAI currentCustomer;                      // 현재 구매 중인 손님
+    private CustomerAI currentCustomer; // 현재 구매 중인 손님
 
     public int FriedStored => friedStored;
     public int MoneyStored => moneyStored;
@@ -58,6 +58,12 @@ public class SalesCounter : MonoBehaviour
 
         // 플레이어가 튀긴닭을 가지고 있어야 함
         return inv.Get(ResourceType.FriedChicken) > 0;
+    }
+
+    // 판매대에 닭을 더 올릴 수 있는지 확인
+    public bool CanPutFried()
+    {
+        return friedStored < maxFried;
     }
 
     // 플레이어가 돈 프리팹을 가져갈 수 있는지 확인
@@ -86,7 +92,6 @@ public class SalesCounter : MonoBehaviour
         if (inv == null)
             return;
 
-        // 기존 투입 코루틴이 있으면 중지
         if (putCo != null)
             StopCoroutine(putCo);
 
@@ -110,7 +115,6 @@ public class SalesCounter : MonoBehaviour
         if (inv == null)
             return;
 
-        // 기존 수령 코루틴이 있으면 중지
         if (takeCo != null)
             StopCoroutine(takeCo);
 
@@ -129,7 +133,6 @@ public class SalesCounter : MonoBehaviour
     // 플레이어가 닭 1개 올리기
     public bool PutOne(PlayerInventory inv)
     {
-        // 올릴 수 없으면 실패
         if (!CanPut(inv))
             return false;
 
@@ -145,11 +148,36 @@ public class SalesCounter : MonoBehaviour
         return true;
     }
 
+    // 외부에서 튀긴닭을 직접 판매대에 올리기
+    // amount만큼 올리려고 시도하고 실제로 올린 개수를 반환
+    public int PutFriedDirect(int amount)
+    {
+        // 0 이하면 종료
+        if (amount <= 0)
+            return 0;
+
+        // 남은 공간 계산
+        int remainSpace = maxFried - friedStored;
+
+        // 공간이 없으면 종료
+        if (remainSpace <= 0)
+            return 0;
+
+        // 남은 공간보다 많으면 잘라서 올림
+        if (amount > remainSpace)
+            amount = remainSpace;
+
+        // 판매대 튀긴닭 증가
+        friedStored += amount;
+        RefreshView();
+
+        return amount;
+    }
+
     // 플레이어가 돈 프리팹 1개 가져가기
-    // 돈 프리팹 1개는 실제로 rewardMoney(10원) 가치
+    // 돈 프리팹 1개는 실제로 rewardMoney 가치
     public bool TakeMoneyOne(PlayerInventory inv)
     {
-        // 돈 프리팹이 없으면 실패
         if (!CanTakeMoney())
             return false;
 
@@ -168,7 +196,6 @@ public class SalesCounter : MonoBehaviour
     // 맨 앞 손님이 판매대에 도착했을 때 호출
     public void StartCustomerService(CustomerAI customer)
     {
-        // 손님이 없으면 종료
         if (customer == null)
             return;
 
@@ -176,22 +203,17 @@ public class SalesCounter : MonoBehaviour
         if (currentCustomer != null)
             return;
 
-        // 현재 손님 등록
         currentCustomer = customer;
-
-        // 새 손님 시작 시 진행도 초기화
         currentCustomerTaken = 0;
 
-        // 머리 위 남은 수량 표시
+        // 손님 머리 위 남은 수량 표시
         currentCustomer.SetRemainCount(GetRemainForCurrentCustomer());
 
         RefreshView();
 
-        // 기존 손님 구매 코루틴이 있으면 중지
         if (customerCo != null)
             StopCoroutine(customerCo);
 
-        // 손님 구매 시작
         customerCo = StartCoroutine(CoCustomerBuy());
     }
 
@@ -200,20 +222,16 @@ public class SalesCounter : MonoBehaviour
     {
         while (true)
         {
-            // 트리거에서 나가면 종료
             if (putTrigger.CurrentPlayer != inv)
                 break;
 
-            // 더 올릴 수 없으면 대기
             if (!CanPut(inv))
             {
                 yield return null;
                 continue;
             }
 
-            // 닭 1개 올리기
             PutOne(inv);
-
             yield return new WaitForSeconds(putDelay);
         }
 
@@ -225,20 +243,16 @@ public class SalesCounter : MonoBehaviour
     {
         while (true)
         {
-            // 트리거에서 나가면 종료
             if (takeTrigger.CurrentPlayer != inv)
                 break;
 
-            // 가져갈 돈 프리팹이 없으면 대기
             if (!CanTakeMoney())
             {
                 yield return null;
                 continue;
             }
 
-            // 돈 프리팹 1개 가져가기
             TakeMoneyOne(inv);
-
             yield return new WaitForSeconds(takeDelay);
         }
 
@@ -246,13 +260,12 @@ public class SalesCounter : MonoBehaviour
     }
 
     // 손님 구매 처리
-    // 닭이 한 번에 4개 모여야 하는 것이 아니라
-    // 닭이 생길 때마다 1개씩 계속 가져가도록 처리
+    // 닭이 생길 때마다 1개씩 가져감
     private IEnumerator CoCustomerBuy()
     {
         while (NeedMoreForCurrentCustomer())
         {
-            // 판매대에 닭이 없으면 잠깐 기다렸다가 다시 확인
+            // 판매대에 닭이 없으면 기다림
             if (friedStored <= 0)
             {
                 yield return null;
@@ -282,11 +295,10 @@ public class SalesCounter : MonoBehaviour
         if (CustomerManager.I != null && currentCustomer != null)
             CustomerManager.I.RemoveFromLine(currentCustomer);
 
-        // 현재 손님은 출구로 이동
+        // 현재 손님 출구 이동
         if (currentCustomer != null)
             currentCustomer.OnSaleFinished();
 
-        // 현재 손님 상태 초기화
         currentCustomer = null;
         currentCustomerTaken = 0;
         customerCo = null;
